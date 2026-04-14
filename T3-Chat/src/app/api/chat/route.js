@@ -114,7 +114,7 @@ export async function POST(req) {
 
     // 🚀 6. STREAM RESPONSE
     const result = streamText({
-      model: provider.chat(model),
+      model: provider.chat("openai/gpt-3.5-turbo"),
       messages: modelMessages,
       system: CHAT_SYSTEM_PROMPT,
     });
