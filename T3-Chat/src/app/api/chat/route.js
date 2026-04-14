@@ -44,37 +44,38 @@ function extractPartsAsJSON(message) {
 }
 
 export async function POST(req) {
-  try {
-    // 🔐 1. AUTH CHECK
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
+   try 
+   {
+  //   // 🔐 1. AUTH CHECK
+  //   const session = await auth.api.getSession({
+  //     headers: await headers(),
+  //   });
 
-    if (!session?.user) {
-      return new Response("Unauthorized", { status: 401 });
-    }
+  //   if (!session?.user) {
+  //     return new Response("Unauthorized", { status: 401 });
+  //   }
 
-    // 📦 2. PARSE REQUEST
-    const {
-      chatId,
-      messages: newMessages,
-      model,
-      skipUserMessage,
-    } = await req.json();
+  //   // 📦 2. PARSE REQUEST
+  //   const {
+  //     chatId,
+  //     messages: newMessages,
+  //     model,
+  //     skipUserMessage,
+  //   } = await req.json();
 
-    // 🔐 3. CHAT OWNERSHIP CHECK
-    if (chatId) {
-      const chat = await db.chat.findFirst({
-        where: {
-          id: chatId,
-          userId: session.user.id,
-        },
-      });
+  //   // 🔐 3. CHAT OWNERSHIP CHECK
+  //   if (chatId) {
+  //     const chat = await db.chat.findFirst({
+  //       where: {
+  //         id: chatId,
+  //         userId: session.user.id,
+  //       },
+  //     });
 
-      if (!chat) {
-        return new Response("Forbidden", { status: 403 });
-      }
-    }
+  //     if (!chat) {
+  //       return new Response("Forbidden", { status: 403 });
+  //     }
+  //   }
 
     // 📚 4. LOAD PREVIOUS MESSAGES
     const previousMessages = chatId
