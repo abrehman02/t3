@@ -13,20 +13,26 @@ import { toast } from "sonner";
 const ChatMessageForm = ({ initialMessage, onMessageChange }) => {
   const { data: models, isPending } = useAIModels();
 
-  const [selectedModel, setSelectedModel] = useState(models?.models[0]?.id);
+  const [selectedModel, setSelectedModel] = useState(null);
   const [message, setMessage] = useState("");
   const { mutateAsync, isPending: isChatPending } = useCreateChat();
 
+  // ✅ FIX 3 — Default model properly
   useEffect(() => {
-    if (initialMessage) {
-      setMessage(initialMessage);
-      onMessageChange?.("");
+    if (models?.models?.length && !selectedModel) {
+      setSelectedModel(models.models[0].id);
     }
-  }, [initialMessage, onMessageChange]);
+  }, [models]);
 
   const handleSubmit = async (e) => {
     try {
       e.preventDefault();
+
+      if (!selectedModel) {
+        toast.error("Please select a model");
+        return;
+      }
+
       await mutateAsync({ content: message, model: selectedModel });
       toast.success("Message sent successfully");
     } catch (error) {
@@ -37,18 +43,18 @@ const ChatMessageForm = ({ initialMessage, onMessageChange }) => {
     }
   };
 
+  // ✅ FIX 4 — Model safety guard
+  const modelList = models?.models || [];
+
   return (
     <div className="w-full max-w-3xl mx-auto px-4 pb-6">
       <form onSubmit={handleSubmit}>
-        <div
-          className="relative rounded-2xl border-border shadow-sm transition-all
-            "
-        >
+        <div className="relative rounded-2xl border-border shadow-sm transition-all">
           <Textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type your mesage here..."
-            className="min-h-[60px] max-h-[200px] resize-none border-0 bg-transparent px-4 py-3 text-base focus-visible:ring-0 focus-visible:ring-offset-0 "
+            placeholder="Type your message here..."
+            className="min-h-[60px] max-h-[200px] resize-none border-0 bg-transparent px-4 py-3 text-base focus-visible:ring-0 focus-visible:ring-offset-0"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -61,31 +67,26 @@ const ChatMessageForm = ({ initialMessage, onMessageChange }) => {
             {/* Model Selector */}
             <div className="flex items-center gap-1">
               {isPending ? (
-                <>
-                  <Spinner />
-                </>
+                <Spinner />
               ) : (
-                <>
-                  <ModelSelector
-                    models={models?.models}
-                    selectedModelId={selectedModel}
-                    onModelSelect={setSelectedModel}
-                    className="ml-1"
-                  />
-                </>
+                <ModelSelector
+                  models={modelList}
+                  selectedModelId={selectedModel}
+                  onModelSelect={setSelectedModel}
+                  className="ml-1"
+                />
               )}
             </div>
+
             <Button
               type="submit"
               disabled={!message.trim() || isChatPending}
               size="sm"
               variant={message.trim() ? "default" : "ghost"}
-              className="h-8 w-8 p-0 rounded-full "
+              className="h-8 w-8 p-0 rounded-full"
             >
               {isChatPending ? (
-                <>
-                <Spinner/>
-                </>
+                <Spinner />
               ) : (
                 <>
                   <Send className="h-4 w-4" />

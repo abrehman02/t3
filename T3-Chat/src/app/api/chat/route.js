@@ -1,10 +1,12 @@
-import { convertToModelMessages, streamText, tool } from "ai";
+import { convertToModelMessages, streamText } from "ai";
 import db from "@/lib/db";
 import { MessageRole, MessageType } from "@prisma/client";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { CHAT_SYSTEM_PROMPT } from "@/lib/prompt";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
-// initalize openRouter provider
+// initialize OpenRouter provider
 const provider = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
@@ -43,6 +45,16 @@ function extractPartsAsJSON(message) {
 
 export async function POST(req) {
   try {
+    // 🔐 1. AUTH CHECK
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session?.user) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    // 📦 2. PARSE REQUEST
     const {
       chatId,
       messages: newMessages,
@@ -50,12 +62,25 @@ export async function POST(req) {
       skipUserMessage,
     } = await req.json();
 
+    // 🔐 3. CHAT OWNERSHIP CHECK
+    if (chatId) {
+      const chat = await db.chat.findFirst({
+        where: {
+          id: chatId,
+          userId: session.user.id,
+        },
+      });
+
+      if (!chat) {
+        return new Response("Forbidden", { status: 403 });
+      }
+    }
+
+    // 📚 4. LOAD PREVIOUS MESSAGES
     const previousMessages = chatId
       ? await db.message.findMany({
           where: { chatId },
-          orderBy: {
-            createdAt: "asc",
-          },
+          orderBy: { createdAt: "asc" },
         })
       : [];
 
@@ -69,11 +94,12 @@ export async function POST(req) {
 
     const allUIMessages = [...uiMessages, ...normalizedNewMessages];
 
+    // 🤖 5. CONVERT TO MODEL FORMAT
     let modelMessages;
 
     try {
       modelMessages = convertToModelMessages(allUIMessages);
-    } catch (conversionError) {
+    } catch {
       modelMessages = allUIMessages
         .map((msg) => ({
           role: msg.role,
@@ -85,6 +111,7 @@ export async function POST(req) {
         .filter((m) => m.content);
     }
 
+    // 🚀 6. STREAM RESPONSE
     const result = streamText({
       model: provider.chat(model),
       messages: modelMessages,
@@ -94,20 +121,20 @@ export async function POST(req) {
     return result.toUIMessageStreamResponse({
       sendReasoning: true,
       originalMessages: allUIMessages,
+
       onFinish: async ({ responseMessage }) => {
         try {
           const messagesToSave = [];
 
+          // 💬 Save user message
           if (!skipUserMessage) {
             const latestUserMessage =
               normalizedNewMessages[normalizedNewMessages.length - 1];
 
             if (latestUserMessage?.role === "user") {
-              const userPartsJSON = extractPartsAsJSON(latestUserMessage);
-
               messagesToSave.push({
                 chatId,
-                content: userPartsJSON,
+                content: extractPartsAsJSON(latestUserMessage),
                 messageRole: MessageRole.USER,
                 model,
                 messageType: MessageType.NORMAL,
@@ -115,12 +142,11 @@ export async function POST(req) {
             }
           }
 
-          if (responseMessage?.parts && responseMessage.parts.length > 0) {
-            const assistantPartsJSON = extractPartsAsJSON(responseMessage);
-
+          // 🤖 Save assistant message
+          if (responseMessage?.parts?.length > 0) {
             messagesToSave.push({
               chatId,
-              content: assistantPartsJSON,
+              content: extractPartsAsJSON(responseMessage),
               messageRole: MessageRole.ASSISTANT,
               model,
               messageType: MessageType.NORMAL,
@@ -139,10 +165,10 @@ export async function POST(req) {
     });
   } catch (error) {
     console.error("❌ API Route Error:", error);
+
     return new Response(
       JSON.stringify({
         error: error.message || "Internal server error",
-        details: error.toString(),
       }),
       {
         status: 500,

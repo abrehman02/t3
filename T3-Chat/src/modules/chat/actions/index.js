@@ -99,7 +99,7 @@ export const getChatById = async(chatId)=>{
   }
 
   try {
-    const chat = await db.chat.findUnique({
+    const chat = await db.chat.findFirst({
       where:{
         id:chatId,
         userId:user.id
@@ -135,7 +135,7 @@ export const deleteChat = async(chatId)=>{
       }
     }
 
-    const chat = await db.chat.findUnique({
+    const chat = await db.chat.findFirst({
       where:{
         id:chatId,
         userId:user.id
