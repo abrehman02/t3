@@ -2,7 +2,16 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req) {
   try {
-   
+    if (!process.env.OPENROUTER_API_KEY) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "OPENROUTER_API_KEY is not configured",
+        },
+        { status: 500 }
+      );
+    }
+
     const response = await fetch('https://openrouter.ai/api/v1/models', {
       method: 'GET',
       headers: {
@@ -16,8 +25,9 @@ export async function GET(req) {
     }
 
     const data = await response.json();
+    const models = Array.isArray(data?.data) ? data.data : [];
     
-    const freeModels = data.data.filter(model => {
+    const freeModels = models.filter(model => {
       const promptPrice = parseFloat(model.pricing?.prompt || '0');
       const completionPrice = parseFloat(model.pricing?.completion || '0');
       return promptPrice === 0 && completionPrice === 0;

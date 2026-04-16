@@ -3,8 +3,6 @@ import db from "@/lib/db";
 import { MessageRole, MessageType } from "@prisma/client";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { CHAT_SYSTEM_PROMPT } from "@/lib/prompt";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
 
 // initialize OpenRouter provider
 const provider = createOpenRouter({
@@ -46,6 +44,49 @@ function extractPartsAsJSON(message) {
 export async function POST(req) {
    try 
    {
+    const {
+      chatId = null,
+      messages: incomingMessages = [],
+      model = "openai/gpt-3.5-turbo",
+      skipUserMessage = false,
+    } = await req.json();
+    const safeModel =
+      typeof model === "string" && model.trim()
+        ? model
+        : "openai/gpt-3.5-turbo";
+
+    if (!process.env.OPENROUTER_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: "OPENROUTER_API_KEY is not configured" }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (chatId !== null && typeof chatId !== "string") {
+      return new Response(
+        JSON.stringify({ error: "chatId must be a string or null" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (
+      !Array.isArray(incomingMessages) &&
+      (typeof incomingMessages !== "object" || incomingMessages === null)
+    ) {
+      return new Response(
+        JSON.stringify({ error: "messages must be an array or object" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
   //   // 🔐 1. AUTH CHECK
   //   const session = await auth.api.getSession({
   //     headers: await headers(),
@@ -78,20 +119,29 @@ export async function POST(req) {
   //   }
 
     // 📚 4. LOAD PREVIOUS MESSAGES
-    const previousMessages = chatId
-      ? await db.message.findMany({
-          where: { chatId },
-          orderBy: { createdAt: "asc" },
-        })
-      : [];
+    let previousMessages = [];
+
+    try {
+      previousMessages = chatId
+        ? await db.message.findMany({
+            where: { chatId },
+            orderBy: { createdAt: "asc" },
+          })
+        : [];
+    } catch (error) {
+      console.error("DB ERROR:", error);
+      return new Response("DB Error", { status: 500 });
+    }
 
     const uiMessages = previousMessages
       .map(convertStoredMessageToUI)
       .filter((msg) => msg !== null);
 
-    const normalizedNewMessages = Array.isArray(newMessages)
-      ? newMessages
-      : [newMessages];
+    const normalizedNewMessages = Array.isArray(incomingMessages)
+      ? incomingMessages.filter(Boolean)
+      : incomingMessages
+      ? [incomingMessages]
+      : [];
 
     const allUIMessages = [...uiMessages, ...normalizedNewMessages];
 
@@ -114,7 +164,7 @@ export async function POST(req) {
 
     // 🚀 6. STREAM RESPONSE
     const result = streamText({
-      model: provider.chat("openai/gpt-3.5-turbo"),
+      model: provider.chat(safeModel),
       messages: modelMessages,
       system: CHAT_SYSTEM_PROMPT,
     });
@@ -137,7 +187,7 @@ export async function POST(req) {
                 chatId,
                 content: extractPartsAsJSON(latestUserMessage),
                 messageRole: MessageRole.USER,
-                model,
+                model: safeModel,
                 messageType: MessageType.NORMAL,
               });
             }
@@ -149,7 +199,7 @@ export async function POST(req) {
               chatId,
               content: extractPartsAsJSON(responseMessage),
               messageRole: MessageRole.ASSISTANT,
-              model,
+              model: safeModel,
               messageType: MessageType.NORMAL,
             });
           }
